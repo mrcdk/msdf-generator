@@ -82,6 +82,6 @@ export async function adjustFont(fontInfo: SdfFontInfo) {
       await fs.ensureDir(metricsDir);
       await fs.writeFile(metricsFilePath, JSON.stringify(fontMetrics, null, 2));
     })(),
-    fs.writeFile(fontInfo.jsonPath, JSON.stringify(json, null, 2))
+    fs.writeFile(fontInfo.jsonPath, JSON.stringify(json))
   ]);
 }

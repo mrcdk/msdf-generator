@@ -62,6 +62,7 @@ type FontOptions = {
   roundDecimal: number;
   smartSize: boolean;
   pot: boolean;
+  textureSize: number[];
   fontSize: number;
   distanceRange: number;
   charset?: string;
@@ -100,13 +101,15 @@ export async function genFont(fontFileName: string, fieldType: 'ssdf' | 'msdf'):
   const font_size = overrides[fontNameNoExt]?.[fieldType]?.fontSize || 42;
   const distance_range =
     overrides[fontNameNoExt]?.[fieldType]?.distanceRange || 4;
+  const extra_presets = overrides[fontNameNoExt]?.[fieldType]?.presets || [];
 
   let options: FontOptions = {
     fieldType: bmfont_field_type,
     outputType: 'json',
     roundDecimal: 6,
     smartSize: true,
-    pot: true,
+    pot: false,
+    textureSize: [2048, 2048],
     fontSize: font_size,
     distanceRange: distance_range,
   }
@@ -114,7 +117,7 @@ export async function genFont(fontFileName: string, fieldType: 'ssdf' | 'msdf'):
   if (fs.existsSync(charsetPath)) {
     const config:CharsetConfig =  JSON.parse(fs.readFileSync(charsetPath, 'utf8'))
     let charset = config.charset
-    const presetsToApply = config.presets
+    const presetsToApply = config.presets.concat(extra_presets);
     for (let i = 0; i < presetsToApply.length; i++ ){
       const key = presetsToApply[i]
       if (key && key in presets)  {
@@ -131,8 +134,8 @@ export async function genFont(fontFileName: string, fieldType: 'ssdf' | 'msdf'):
   const info: SdfFontInfo = {
     fontName: fontNameNoExt,
     fieldType,
-    jsonPath: path.join(fontDstDir, `${fontNameNoExt}.${fieldType}.json`),
-    pngPath: path.join(fontDstDir, `${fontNameNoExt}.${fieldType}.png`),
+    jsonPath: path.join(fontDstDir, `${fontNameNoExt}_${fieldType}.json`),
+    pngPath: path.join(fontDstDir, `${fontNameNoExt}_${fieldType}.png`),
     fontPath,
     dstDir: fontDstDir,
   };
@@ -153,16 +156,17 @@ const generateFont = (fontSrcPath: string, fontDestPath: string, fontName: strin
           console.error(err)
           reject(err)
         } else {
+          let i = 0;
           textures.forEach((texture: any) => {
             try {
-              fs.writeFileSync(path.resolve(fontDestPath, `${fontName}.${fieldType}.png`), texture.texture)
+              fs.writeFileSync(path.resolve(fontDestPath, `${fontName}_${fieldType}_${i++}.png`), texture.texture)
             } catch (e) {
               console.error(e)
               reject(e)
             }
           })
           try {
-            fs.writeFileSync(path.resolve(fontDestPath, `${fontName}.${fieldType}.json`), font.data)
+            fs.writeFileSync(path.resolve(fontDestPath, `${fontName}_${fieldType}.json`), font.data)
             resolve()
           } catch (e) {
             console.error(err)
