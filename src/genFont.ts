@@ -20,6 +20,7 @@ import path from 'path';
 import chalk from 'chalk';
 import { fileURLToPath } from 'url'
 import generateBMFont from 'msdf-bmfont-xml';
+import opentype from 'opentype.js';
 
 let fontSrcDir: string = '';
 let fontDstDir: string = '';
@@ -65,7 +66,7 @@ type FontOptions = {
   textureSize: number[];
   fontSize: number;
   distanceRange: number;
-  charset?: string;
+  charset?: Array<{char: string, tag?: string}>;
 }
 
 interface CharsetConfig{
@@ -99,9 +100,11 @@ export async function genFont(fontFileName: string, fieldType: 'ssdf' | 'msdf'):
   const fontNameNoExt = fontFileName.split('.')[0]!;
   const overrides = fs.existsSync(overridesPath) ? JSON.parse(fs.readFileSync(overridesPath, 'utf8')) : {};
   const font_size = overrides[fontNameNoExt]?.[fieldType]?.fontSize || 42;
-  const distance_range =
-    overrides[fontNameNoExt]?.[fieldType]?.distanceRange || 4;
+  const distance_range = overrides[fontNameNoExt]?.[fieldType]?.distanceRange || 4;
   const extra_presets = overrides[fontNameNoExt]?.[fieldType]?.presets || [];
+  const texture_width = overrides[fontNameNoExt]?.[fieldType]?.textureWidth || 2048;
+  const texture_height = overrides[fontNameNoExt]?.[fieldType]?.textureHeight || 2048;
+  const all_glyphs = overrides[fontNameNoExt]?.allGlyphs || false;
 
   let options: FontOptions = {
     fieldType: bmfont_field_type,
@@ -109,24 +112,40 @@ export async function genFont(fontFileName: string, fieldType: 'ssdf' | 'msdf'):
     roundDecimal: 6,
     smartSize: true,
     pot: false,
-    textureSize: [2048, 2048],
+    textureSize: [texture_width, texture_height],
     fontSize: font_size,
     distanceRange: distance_range,
   }
 
   if (fs.existsSync(charsetPath)) {
     const config:CharsetConfig =  JSON.parse(fs.readFileSync(charsetPath, 'utf8'))
-    let charset = config.charset
+    let charset:Array<{char: string, tag?: string}> = Array.from(config.charset).map(c => {return {char:c, tag: 'required'}});
     const presetsToApply = config.presets.concat(extra_presets);
     for (let i = 0; i < presetsToApply.length; i++ ){
       const key = presetsToApply[i]
       if (key && key in presets)  {
-        charset += presets[key]
+        charset.push(...Array.from(presets[key] ?? '').map(c => {return {char:c, tag: 'required'}}));
       } else {
         console.warn(`preset, '${key}' is not available in msdf-generator presets`)
       }
     }
-    options['charset'] = charset
+
+    if(all_glyphs) {
+      const font = await opentype.load(fontPath);
+      for (let i = 0; i < font.glyphs.length; i++) {
+        const glyph = font.glyphs.get(i);
+        const unicode = glyph.unicode;
+        if (unicode) {
+          const char = String.fromCharCode(unicode);
+          if(charset.some(c => c.char === char)) {
+            continue;
+          }
+          charset.push({char: char});
+        }
+      }
+    }
+
+    options['charset'] = charset;
   }
 
   await generateFont(fontPath, fontDstDir, fontNameNoExt, fieldType, options)
@@ -157,16 +176,21 @@ const generateFont = (fontSrcPath: string, fontDestPath: string, fontName: strin
           reject(err)
         } else {
           let i = 0;
+          let pages: Array<string> = [];
           textures.forEach((texture: any) => {
             try {
-              fs.writeFileSync(path.resolve(fontDestPath, `${fontName}_${fieldType}_${i++}.png`), texture.texture)
+              const textureName = `${fontName}_${fieldType}_${i++}`
+              pages.push(textureName);
+              fs.writeFileSync(path.resolve(fontDestPath, `${textureName}.png`), texture.texture)
             } catch (e) {
               console.error(e)
               reject(e)
             }
           })
           try {
-            fs.writeFileSync(path.resolve(fontDestPath, `${fontName}_${fieldType}.json`), font.data)
+            let data = JSON.parse(font.data)
+            data.pages = pages
+            fs.writeFileSync(path.resolve(fontDestPath, `${fontName}_${fieldType}.json`), JSON.stringify(data))
             resolve()
           } catch (e) {
             console.error(err)
